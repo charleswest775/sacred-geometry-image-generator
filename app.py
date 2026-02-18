@@ -221,8 +221,39 @@ def draw_pattern(pattern_type, draw, center, size, params):
             a, b = b, a + b
             direction = (direction + 1) % 4
 
+# --- Container Shape Drawing ---
+def draw_container(draw, center, size, shape, scale_pct, color, width, rect_length=None, rect_width=None):
+    r = (size // 2) * (scale_pct / 100)
+    if shape == "Circle":
+        draw.ellipse([center - r, center - r, center + r, center + r], outline=color, width=width)
+    elif shape == "Square":
+        draw.rectangle([center - r, center - r, center + r, center + r], outline=color, width=width)
+    elif shape == "Rectangle":
+        half_w = (rect_width / 2) if rect_width else r
+        half_h = (rect_length / 2) if rect_length else r * 0.6
+        draw.rectangle([center - half_w, center - half_h, center + half_w, center + half_h], outline=color, width=width)
+    elif shape == "Triangle":
+        pts = [
+            (center, center - r),
+            (center - r * math.cos(math.radians(30)), center + r * math.sin(math.radians(30))),
+            (center + r * math.cos(math.radians(30)), center + r * math.sin(math.radians(30))),
+        ]
+        draw.polygon(pts, outline=color, width=width)
+    elif shape == "Hexagon":
+        pts = []
+        for i in range(6):
+            angle = math.radians(i * 60 - 30)
+            pts.append((center + r * math.cos(angle), center + r * math.sin(angle)))
+        draw.polygon(pts, outline=color, width=width)
+    elif shape == "Octagon":
+        pts = []
+        for i in range(8):
+            angle = math.radians(i * 45 - 22.5)
+            pts.append((center + r * math.cos(angle), center + r * math.sin(angle)))
+        draw.polygon(pts, outline=color, width=width)
+
 # --- Smoothing & Glow Engine ---
-def render_smooth_pattern(pattern_type, size, params, glow_on, scale_factor=3):
+def render_smooth_pattern(pattern_type, size, params, glow_on, container=None, scale_factor=3):
     render_size = size * scale_factor
     render_center = render_size // 2
 
@@ -241,12 +272,30 @@ def render_smooth_pattern(pattern_type, size, params, glow_on, scale_factor=3):
         glow_params = scaled_params.copy()
         glow_params['width'] = scaled_params['width'] + (8 * scale_factor)
         draw_pattern(pattern_type, glow_draw, render_center, render_size, glow_params)
+        if container:
+            c = container
+            c_rect_l = c.get('rect_length', None)
+            c_rect_w = c.get('rect_width', None)
+            draw_container(glow_draw, render_center, render_size, c['shape'], c['scale_pct'],
+                           c['color'], glow_params['width'],
+                           rect_length=c_rect_l * scale_factor if c_rect_l else None,
+                           rect_width=c_rect_w * scale_factor if c_rect_w else None)
         glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=5 * scale_factor))
         img.paste(glow_layer, (0, 0), glow_layer)
 
     # Sharp core lines
     main_draw = ImageDraw.Draw(img)
     draw_pattern(pattern_type, main_draw, render_center, render_size, scaled_params)
+
+    # Draw container shape
+    if container:
+        c = container
+        c_rect_l = c.get('rect_length', None)
+        c_rect_w = c.get('rect_width', None)
+        draw_container(main_draw, render_center, render_size, c['shape'], c['scale_pct'],
+                       c['color'], scaled_params['width'],
+                       rect_length=c_rect_l * scale_factor if c_rect_l else None,
+                       rect_width=c_rect_w * scale_factor if c_rect_w else None)
 
     # Anti-aliasing via downsampling
     img = img.resize((size, size), resample=Image.LANCZOS)
@@ -281,6 +330,18 @@ bg_col = st.sidebar.color_picker("Background Color", "#0E1117")
 line_col = st.sidebar.color_picker("Line Color", "#00FAFF")
 thickness = adjustable_value("Line Thickness", "thickness", 2)
 glow_active = st.sidebar.checkbox("Enable Ethereal Glow", value=True)
+
+# Container Shape Controls
+st.sidebar.header("Container Shape")
+container_on = st.sidebar.checkbox("Enable Container Shape", value=False)
+container_cfg = None
+if container_on:
+    container_shape = st.sidebar.selectbox("Container Shape", ["Circle", "Square", "Rectangle", "Triangle", "Hexagon", "Octagon"])
+    container_scale = adjustable_value("Container Scale %", "container_scale", 90, step=5)
+    container_cfg = {'shape': container_shape, 'scale_pct': container_scale, 'color': line_col}
+    if container_shape == "Rectangle":
+        container_cfg['rect_length'] = adjustable_value("Rectangle Length", "rect_length", 300, step=10)
+        container_cfg['rect_width'] = adjustable_value("Rectangle Width", "rect_width", 500, step=10)
 
 # Dynamic Sidebar Parameters
 ui_params = {
@@ -324,7 +385,8 @@ try:
             pattern_type=pattern_choice,
             size=800,
             params=ui_params,
-            glow_on=glow_active
+            glow_on=glow_active,
+            container=container_cfg
         )
         st.image(final_output, width="stretch")
 
