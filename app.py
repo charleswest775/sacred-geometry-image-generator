@@ -3,15 +3,26 @@ from PIL import Image, ImageDraw, ImageFilter
 import math
 import io
 
+# --- Helper: number input with +/- buttons ---
+def adjustable_value(label, key, default, step=1):
+    if key not in st.session_state:
+        st.session_state[key] = default
+    st.sidebar.markdown(f"**{label}**")
+    cols = st.sidebar.columns([1, 3, 1])
+    if cols[0].button("−", key=f"{key}_minus"):
+        st.session_state[key] -= step
+    cols[1].markdown(f"<div style='text-align:center;padding:5px 0;font-size:1.2em'>{st.session_state[key]}</div>", unsafe_allow_html=True)
+    if cols[2].button("+", key=f"{key}_plus"):
+        st.session_state[key] += step
+    return st.session_state[key]
+
 # --- Core Drawing Logic ---
 def draw_pattern(pattern_type, draw, center, size, params):
     color, width = params['color'], params['width']
-    
+
     if pattern_type == "Flower of Life":
         radius, layers = params['radius'], params['layers']
-        # Central Circle
         draw.ellipse([center-radius, center-radius, center+radius, center+radius], outline=color, width=width)
-        # Layering Logic
         for layer in range(1, layers + 1):
             for i in range(6):
                 angle = math.radians(i * 60)
@@ -22,7 +33,7 @@ def draw_pattern(pattern_type, draw, center, size, params):
                     cx = start_x + (j * radius) * math.cos(mv_angle)
                     cy = start_y + (j * radius) * math.sin(mv_angle)
                     draw.ellipse([cx-radius, cy-radius, cx+radius, cy+radius], outline=color, width=width)
-                    
+
     elif pattern_type == "Golden Ratio Spiral":
         scale, iters = params['scale'], params['iters']
         a, b, x, y, direction = 0, 1, center, center, 0
@@ -35,11 +46,186 @@ def draw_pattern(pattern_type, draw, center, size, params):
             draw.arc(bbox, start=s, end=e, fill=color, width=width)
             a, b, direction = b, a + b, (direction + 1) % 4
 
+    elif pattern_type == "Metatron's Cube":
+        radius = params['radius']
+        # 13 circles: 1 center + 6 inner + 6 outer
+        points = [(center, center)]
+        for i in range(6):
+            angle = math.radians(i * 60)
+            points.append((center + radius * math.cos(angle), center + radius * math.sin(angle)))
+        for i in range(6):
+            angle = math.radians(i * 60)
+            points.append((center + 2 * radius * math.cos(angle), center + 2 * radius * math.sin(angle)))
+        # Draw circles
+        for px, py in points:
+            draw.ellipse([px - radius, py - radius, px + radius, py + radius], outline=color, width=width)
+        # Connect all points with lines
+        for i in range(len(points)):
+            for j in range(i + 1, len(points)):
+                draw.line([points[i], points[j]], fill=color, width=width)
+
+    elif pattern_type == "Sri Yantra":
+        r = params['radius']
+        # Outer circle
+        draw.ellipse([center - r, center - r, center + r, center + r], outline=color, width=width)
+        # 9 interlocking triangles (4 upward, 5 downward) - simplified representation
+        triangle_scales = [0.95, 0.78, 0.62, 0.48, 0.36, 0.26, 0.18, 0.12, 0.07]
+        for idx, s in enumerate(triangle_scales):
+            sr = r * s
+            if idx % 2 == 0:  # Upward triangle
+                pts = [
+                    (center, center - sr),
+                    (center - sr * math.cos(math.radians(30)), center + sr * math.sin(math.radians(30))),
+                    (center + sr * math.cos(math.radians(30)), center + sr * math.sin(math.radians(30))),
+                ]
+            else:  # Downward triangle
+                pts = [
+                    (center, center + sr),
+                    (center - sr * math.cos(math.radians(30)), center - sr * math.sin(math.radians(30))),
+                    (center + sr * math.cos(math.radians(30)), center - sr * math.sin(math.radians(30))),
+                ]
+            draw.polygon(pts, outline=color, width=width)
+
+    elif pattern_type == "Seed of Life":
+        radius = params['radius']
+        draw.ellipse([center - radius, center - radius, center + radius, center + radius], outline=color, width=width)
+        for i in range(6):
+            angle = math.radians(i * 60)
+            cx = center + radius * math.cos(angle)
+            cy = center + radius * math.sin(angle)
+            draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius], outline=color, width=width)
+
+    elif pattern_type == "Torus / Tube Torus":
+        rings = params['rings']
+        radius = params['radius']
+        for i in range(rings):
+            angle = math.radians(i * (360 / rings))
+            # Each ring is an ellipse rotated around center
+            rx = radius
+            ry = radius * 0.4
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            # Approximate rotated ellipse with polygon points
+            pts = []
+            for t in range(64):
+                ta = math.radians(t * (360 / 64))
+                ex = rx * math.cos(ta)
+                ey = ry * math.sin(ta)
+                # Rotate
+                px = center + ex * cos_a - ey * sin_a
+                py = center + ex * sin_a + ey * cos_a
+                pts.append((px, py))
+            pts.append(pts[0])
+            draw.line(pts, fill=color, width=width)
+
+    elif pattern_type == "Vesica Piscis":
+        radius = params['radius']
+        offset = radius / 2
+        draw.ellipse([center - offset - radius, center - radius, center - offset + radius, center + radius], outline=color, width=width)
+        draw.ellipse([center + offset - radius, center - radius, center + offset + radius, center + radius], outline=color, width=width)
+
+    elif pattern_type == "Merkaba (Star Tetrahedron)":
+        radius = params['radius']
+        # Upward triangle
+        up = [
+            (center, center - radius),
+            (center - radius * math.cos(math.radians(30)), center + radius * math.sin(math.radians(30))),
+            (center + radius * math.cos(math.radians(30)), center + radius * math.sin(math.radians(30))),
+        ]
+        draw.polygon(up, outline=color, width=width)
+        # Downward triangle
+        down = [
+            (center, center + radius),
+            (center - radius * math.cos(math.radians(30)), center - radius * math.sin(math.radians(30))),
+            (center + radius * math.cos(math.radians(30)), center - radius * math.sin(math.radians(30))),
+        ]
+        draw.polygon(down, outline=color, width=width)
+        # Outer circle
+        draw.ellipse([center - radius, center - radius, center + radius, center + radius], outline=color, width=width)
+
+    elif pattern_type == "Platonic Solid (Icosahedron 2D)":
+        radius = params['radius']
+        # Project icosahedron vertices onto 2D - outer and inner pentagons + top/bottom
+        outer = []
+        inner = []
+        for i in range(5):
+            a_out = math.radians(i * 72 - 90)
+            a_in = math.radians(i * 72 - 90 + 36)
+            outer.append((center + radius * math.cos(a_out), center + radius * math.sin(a_out)))
+            inner.append((center + radius * 0.5 * math.cos(a_in), center + radius * 0.5 * math.sin(a_in)))
+        # Draw outer pentagon
+        for i in range(5):
+            draw.line([outer[i], outer[(i+1) % 5]], fill=color, width=width)
+        # Draw inner pentagon
+        for i in range(5):
+            draw.line([inner[i], inner[(i+1) % 5]], fill=color, width=width)
+        # Connect outer to inner
+        for i in range(5):
+            draw.line([outer[i], inner[i]], fill=color, width=width)
+            draw.line([outer[i], inner[(i-1) % 5]], fill=color, width=width)
+        # Connect to center top and bottom
+        top = (center, center - radius)
+        bot = (center, center + radius)
+        for p in outer[:3]:
+            draw.line([top, p], fill=color, width=width)
+        for p in outer[2:]:
+            draw.line([bot, p], fill=color, width=width)
+
+    elif pattern_type == "64-Point Grid (Tetrahedron)":
+        radius = params['radius']
+        layers = params['layers']
+        # Grid of equilateral triangles
+        h = radius * math.sqrt(3) / 2
+        for row in range(-layers, layers + 1):
+            for col in range(-layers, layers + 1):
+                x = center + col * radius + (row % 2) * (radius / 2)
+                y = center + row * h
+                # Draw upward triangle
+                p1 = (x, y - h * 2/3)
+                p2 = (x - radius/2, y + h * 1/3)
+                p3 = (x + radius/2, y + h * 1/3)
+                draw.polygon([p1, p2, p3], outline=color, width=width)
+
+    elif pattern_type == "Fibonacci Spiral":
+        scale = params['scale']
+        iters = params['iters']
+        # Draw Fibonacci rectangles and arcs
+        a, b = 1, 1
+        x, y = center, center
+        direction = 0
+        for _ in range(iters):
+            r = b * scale
+            if direction == 0:
+                rect = [x, y, x + r, y + r]
+                arc_bbox = [x, y, x + 2*r, y + 2*r]
+                draw.arc(arc_bbox, 180, 270, fill=color, width=width)
+                draw.rectangle(rect, outline=color, width=max(1, width // 2))
+                y -= a * scale
+            elif direction == 1:
+                rect = [x, y, x + r, y + r]
+                arc_bbox = [x - r, y, x + r, y + 2*r]
+                draw.arc(arc_bbox, 270, 360, fill=color, width=width)
+                draw.rectangle(rect, outline=color, width=max(1, width // 2))
+                x += b * scale
+            elif direction == 2:
+                rect = [x - r, y, x, y + r]
+                arc_bbox = [x - 2*r, y - r, x, y + r]
+                draw.arc(arc_bbox, 0, 90, fill=color, width=width)
+                draw.rectangle(rect, outline=color, width=max(1, width // 2))
+                y += a * scale
+            elif direction == 3:
+                rect = [x - r, y - r, x, y]
+                arc_bbox = [x - r, y - 2*r, x + r, y]
+                draw.arc(arc_bbox, 90, 180, fill=color, width=width)
+                draw.rectangle(rect, outline=color, width=max(1, width // 2))
+                x -= b * scale
+            a, b = b, a + b
+            direction = (direction + 1) % 4
+
 # --- Smoothing & Glow Engine ---
 def render_smooth_pattern(pattern_type, size, params, glow_on, scale_factor=3):
     render_size = size * scale_factor
     render_center = render_size // 2
-    
+
     # Scale parameters for high-res canvas
     scaled_params = params.copy()
     scaled_params['width'] = params['width'] * scale_factor
@@ -48,7 +234,7 @@ def render_smooth_pattern(pattern_type, size, params, glow_on, scale_factor=3):
 
     # Create transparent high-res canvas
     img = Image.new("RGBA", (render_size, render_size), (0, 0, 0, 0))
-    
+
     if glow_on:
         glow_layer = Image.new("RGBA", (render_size, render_size), (0, 0, 0, 0))
         glow_draw = ImageDraw.Draw(glow_layer)
@@ -64,7 +250,7 @@ def render_smooth_pattern(pattern_type, size, params, glow_on, scale_factor=3):
 
     # Anti-aliasing via downsampling
     img = img.resize((size, size), resample=Image.LANCZOS)
-    
+
     # Add background
     final_img = Image.new("RGB", (size, size), params['bg_color'])
     final_img.paste(img, (0, 0), img)
@@ -72,40 +258,75 @@ def render_smooth_pattern(pattern_type, size, params, glow_on, scale_factor=3):
 
 # --- Streamlit UI ---
 st.set_page_config(page_title="Sacred Geometry Generator", layout="centered")
-st.title("💎 Ultra-Smooth Geometry Lab")
+st.title("Sacred Geometry Generator")
+
+PATTERNS = [
+    "Flower of Life",
+    "Seed of Life",
+    "Metatron's Cube",
+    "Sri Yantra",
+    "Vesica Piscis",
+    "Merkaba (Star Tetrahedron)",
+    "Golden Ratio Spiral",
+    "Fibonacci Spiral",
+    "Torus / Tube Torus",
+    "Platonic Solid (Icosahedron 2D)",
+    "64-Point Grid (Tetrahedron)",
+]
 
 # Sidebar Configuration
 st.sidebar.header("Design Controls")
-pattern_choice = st.sidebar.selectbox("Select Pattern", ["Flower of Life", "Golden Ratio Spiral"])
+pattern_choice = st.sidebar.selectbox("Select Pattern", PATTERNS)
 bg_col = st.sidebar.color_picker("Background Color", "#0E1117")
 line_col = st.sidebar.color_picker("Line Color", "#00FAFF")
-thickness = st.sidebar.slider("Line Thickness", 1, 5, 2)
+thickness = adjustable_value("Line Thickness", "thickness", 2)
 glow_active = st.sidebar.checkbox("Enable Ethereal Glow", value=True)
 
 # Dynamic Sidebar Parameters
 ui_params = {
-    'color': line_col, 
-    'width': thickness, 
+    'color': line_col,
+    'width': thickness,
     'bg_color': bg_col
 }
 
 if pattern_choice == "Flower of Life":
-    ui_params['radius'] = st.sidebar.slider("Circle Radius", 20, 150, 70)
-    ui_params['layers'] = st.sidebar.slider("Pattern Layers", 1, 5, 3)
-else:
-    ui_params['scale'] = st.sidebar.slider("Spiral Scale", 1, 20, 8)
-    ui_params['iters'] = st.sidebar.slider("Spiral Iterations", 5, 15, 10)
+    ui_params['radius'] = adjustable_value("Circle Radius", "fol_radius", 70, step=5)
+    ui_params['layers'] = adjustable_value("Pattern Layers", "fol_layers", 3)
+elif pattern_choice == "Seed of Life":
+    ui_params['radius'] = adjustable_value("Circle Radius", "sol_radius", 80, step=5)
+elif pattern_choice == "Metatron's Cube":
+    ui_params['radius'] = adjustable_value("Radius", "mc_radius", 80, step=5)
+elif pattern_choice == "Sri Yantra":
+    ui_params['radius'] = adjustable_value("Radius", "sy_radius", 200, step=10)
+elif pattern_choice == "Vesica Piscis":
+    ui_params['radius'] = adjustable_value("Circle Radius", "vp_radius", 150, step=10)
+elif pattern_choice == "Merkaba (Star Tetrahedron)":
+    ui_params['radius'] = adjustable_value("Radius", "mk_radius", 200, step=10)
+elif pattern_choice == "Golden Ratio Spiral":
+    ui_params['scale'] = adjustable_value("Spiral Scale", "grs_scale", 8)
+    ui_params['iters'] = adjustable_value("Spiral Iterations", "grs_iters", 10)
+elif pattern_choice == "Fibonacci Spiral":
+    ui_params['scale'] = adjustable_value("Spiral Scale", "fib_scale", 8)
+    ui_params['iters'] = adjustable_value("Iterations", "fib_iters", 10)
+elif pattern_choice == "Torus / Tube Torus":
+    ui_params['radius'] = adjustable_value("Radius", "torus_radius", 150, step=10)
+    ui_params['rings'] = adjustable_value("Number of Rings", "torus_rings", 24, step=2)
+elif pattern_choice == "Platonic Solid (Icosahedron 2D)":
+    ui_params['radius'] = adjustable_value("Radius", "ico_radius", 200, step=10)
+elif pattern_choice == "64-Point Grid (Tetrahedron)":
+    ui_params['radius'] = adjustable_value("Triangle Size", "grid_radius", 40, step=5)
+    ui_params['layers'] = adjustable_value("Grid Layers", "grid_layers", 4)
 
 # Render Process
 try:
     with st.spinner("Rendering smooth geometry..."):
         final_output = render_smooth_pattern(
-            pattern_type=pattern_choice, 
-            size=800, 
-            params=ui_params, 
+            pattern_type=pattern_choice,
+            size=800,
+            params=ui_params,
             glow_on=glow_active
         )
-        st.image(final_output, use_container_width=True)
+        st.image(final_output, width="stretch")
 
     # Export Logic
     buf = io.BytesIO()
